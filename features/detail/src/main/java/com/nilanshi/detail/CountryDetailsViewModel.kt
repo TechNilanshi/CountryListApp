@@ -1,0 +1,85 @@
+package com.nilanshi.detail
+
+import androidx.lifecycle.viewModelScope
+import com.nilanshi.common.base.BaseViewModel
+import com.nilanshi.common.base.Reducer
+import com.nilanshi.common.util.NetworkHelper
+import com.nilanshi.data.util.AppConstants
+import com.nilanshi.detail.intent.CountryDetailsScreenUiEvent
+import com.nilanshi.detail.model.CountryDetailsUiState
+import com.nilanshi.domain.usecase.GetCountriesDetailsUseCase
+import com.nilanshi.domain.util.Response
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+/**
+ * This view model is responsible for pass countries list to composable functions
+ * @param getCountriesDetails
+ * @param networkHelper
+ */
+@ExperimentalCoroutinesApi
+@HiltViewModel
+class CountryDetailsViewModel @Inject constructor(
+    private val getCountriesDetails: GetCountriesDetailsUseCase,
+    private val networkHelper: NetworkHelper,
+) : BaseViewModel<CountryDetailsUiState, CountryDetailsScreenUiEvent>() {
+    private val reducer = MainReducer(CountryDetailsUiState.initial())
+
+    override val state: StateFlow<CountryDetailsUiState>
+        get() = reducer.state
+
+    private fun sendEvent(event: CountryDetailsScreenUiEvent) {
+        reducer.sendEvent(event)
+    }
+
+    fun fetchCountryDetails(countryCode: String) {
+        viewModelScope.launch {
+            if (networkHelper.isNetworkConnected()) {
+                getCountriesDetails(countryCode)
+                    .collect() { response ->
+                        when (response) {
+                            is Response.Success -> {
+                                sendEvent(CountryDetailsScreenUiEvent.ShowData(data = response.data))
+                            }
+
+                            is Response.Error -> {
+                                sendEvent(CountryDetailsScreenUiEvent.OnAPIError)
+                            }
+
+                            is Response.Exception -> {
+                                sendEvent(CountryDetailsScreenUiEvent.OnAPIError)
+                            }
+                        }
+                    }
+            } else {
+                sendEvent(CountryDetailsScreenUiEvent.OnInternetError)
+            }
+        }
+    }
+
+    private class MainReducer(initial: CountryDetailsUiState) :
+        Reducer<CountryDetailsUiState, CountryDetailsScreenUiEvent>(initial) {
+        override fun reduce(oldState: CountryDetailsUiState, event: CountryDetailsScreenUiEvent) {
+            when (event) {
+                is CountryDetailsScreenUiEvent.ShowData -> {
+                    setState(oldState.copy(country = event.data, isLoading = false))
+                }
+
+                is CountryDetailsScreenUiEvent.IsLoading -> {
+                    setState(oldState.copy(isLoading = event.isLoading))
+                }
+
+                is CountryDetailsScreenUiEvent.OnAPIError -> {
+                    setState(oldState.copy(errorCode = AppConstants.API_RESPONSE_ERROR, isLoading = false))
+                }
+
+                is CountryDetailsScreenUiEvent.OnInternetError -> {
+                    setState(oldState.copy(errorCode = AppConstants.INTERNET_ERROR, isLoading = false))
+                }
+            }
+        }
+    }
+}
